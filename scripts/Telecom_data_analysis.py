@@ -680,3 +680,426 @@ for metric_name, (top_10, bottom_10, most_frequent) in results.items():
     print("Bottom 10:", bottom_10)
     print("Most Frequent:", most_frequent)
     print("that is good")
+    # Convert 'Avg Bearer TP DL (kbps)' and 'Avg Bearer TP UL (kbps)' to bytes/second for throughput calculations
+data['Avg Bearer TP DL (Bps)'] = data['Avg Bearer TP DL (kbps)'] * 125  # 1 kbps = 125 bytes/s
+data['Avg Bearer TP UL (Bps)'] = data['Avg Bearer TP UL (kbps)'] * 125
+
+# Calculate total average throughput per handset type
+data['Total Throughput (Bps)'] = data['Avg Bearer TP DL (Bps)'] + data['Avg Bearer TP UL (Bps)']
+
+# Group by handset type
+handset_group = data.groupby('Handset Type')
+
+# (d) Distribution of average throughput per handset type
+avg_throughput = handset_group['Total Throughput (Bps)'].mean().sort_values(ascending=False)
+
+# (e) Average TCP retransmissions per handset type
+data['Total TCP Retransmissions (Bytes)'] = data['TCP DL Retrans. Vol (Bytes)'] + data['TCP UL Retrans. Vol (Bytes)']
+avg_tcp_retrans = handset_group['Total TCP Retransmissions (Bytes)'].mean().sort_values(ascending=False)
+
+# Display results
+print("Distribution of Average Throughput per Handset Type:")
+print(avg_throughput)
+
+print("\nAverage TCP Retransmissions per Handset Type:")
+print(avg_tcp_retrans)
+# Define features (engagement and experience metrics) and target (Satisfaction Score)
+features = [
+    'Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 
+    'Activity Duration UL (ms)', 'Avg RTT DL (ms)', 'Avg RTT UL (ms)', 
+    'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)'
+]
+target = 'Satisfaction_Score'
+
+# Convert all feature columns to numeric, coercing non-numeric values to NaN
+for col in features:
+    data[col] = pd.to_numeric(data[col], errors='coerce')
+
+# Fill missing values with column mean
+data[features] = data[features].fillna(data[features].mean())
+
+# Ensure Satisfaction Score is calculated
+data['Engagement_Score'] = data[['Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 'Activity Duration UL (ms)']].mean(axis=1)
+data['Experience_Score'] = data[['Avg RTT DL (ms)', 'Avg RTT UL (ms)', 'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)']].mean(axis=1)
+data['Satisfaction_Score'] = (data['Engagement_Score'] + data['Experience_Score']) / 2
+
+# Feature scaling
+scaler = MinMaxScaler()
+data[features] = scaler.fit_transform(data[features])
+
+# Split data into training and testing sets
+X = data[features]
+y = data[target]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train a Random Forest Regressor
+model = RandomForestRegressor(random_state=42)
+model.fit(X_train, y_train)
+
+# Make predictions
+y_pred = model.predict(X_test)
+
+# Evaluate the model
+mae = mean_absolute_error(y_test, y_pred)
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print("Model Evaluation:")
+print(f"Mean Absolute Error (MAE): {mae}")
+print(f"Mean Squared Error (MSE): {mse}")
+print(f"R^2 Score: {r2}")
+
+# Display feature importance
+feature_importance = pd.DataFrame({
+    'Feature': features,
+    'Importance': model.feature_importances_
+}).sort_values(by='Importance', ascending=False)
+
+print("\nFeature Importance:")
+print(feature_importance)
+#Save the updated dataset
+data.to_csv('Satisfication_score.csv', index=False)
+print("\nsatisfication scores assigned and saved as 'Satisfication_score.csv'")
+
+# Define engagement and experience metrics
+engagement_metrics = ['Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 'Activity Duration UL (ms)']
+experience_metrics = ['Avg RTT DL (ms)', 'Avg RTT UL (ms)', 'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)']
+
+# Convert all feature columns to numeric, coercing non-numeric values to NaN
+for col in engagement_metrics + experience_metrics:
+    data[col] = pd.to_numeric(data[col], errors='coerce')
+
+# Fill missing values with column means
+data[engagement_metrics + experience_metrics] = data[engagement_metrics + experience_metrics].fillna(
+    data[engagement_metrics + experience_metrics].mean()
+)
+
+# Calculate Engagement Score and Experience Score
+data['Engagement_Score'] = data[engagement_metrics].mean(axis=1)
+data['Experience_Score'] = data[experience_metrics].mean(axis=1)
+
+# Normalize Engagement and Experience Scores
+scaler = MinMaxScaler()
+data[['Engagement_Score', 'Experience_Score']] = scaler.fit_transform(data[['Engagement_Score', 'Experience_Score']])
+
+# Apply K-means clustering
+kmeans = KMeans(n_clusters=2, random_state=42)
+data['Cluster'] = kmeans.fit_predict(data[['Engagement_Score', 'Experience_Score']])
+
+# Extract cluster centroids
+centroids = kmeans.cluster_centers_
+
+# Visualize clusters
+plt.figure(figsize=(8, 6))
+plt.scatter(data['Engagement_Score'], data['Experience_Score'], c=data['Cluster'], cmap='viridis', label='Customers')
+plt.scatter(centroids[:, 0], centroids[:, 1], c='red', marker='X', s=200, label='Centroids')
+plt.title("K-Means Clustering (k=2)")
+plt.xlabel("Engagement Score")
+plt.ylabel("Experience Score")
+plt.legend()
+plt.show()
+
+# Display cluster summary
+cluster_summary = data.groupby('Cluster')[['Engagement_Score', 'Experience_Score']].mean()
+print("\nCluster Summary:")
+print(cluster_summary)
+# Ensure Satisfaction Score is calculated
+data['Satisfaction_Score'] = (data['Engagement_Score'] + data['Experience_Score']) / 2
+
+# Group by clusters and calculate the mean Satisfaction and Experience scores
+cluster_summary = data.groupby('Cluster')[['Satisfaction_Score', 'Experience_Score']].mean()
+
+# Display the results
+print("\nAverage Satisfaction & Experience Score Per Cluster:")
+print(cluster_summary)
+import mysql.connector
+
+# Database connection
+connection = mysql.connector.connect(
+    host='localhost',
+    user='root',
+    password='hasan',
+    database='telecom_data_analysis'
+)
+
+cursor = connection.cursor()
+
+# Create table SQL
+create_table_query = """
+CREATE TABLE IF NOT EXISTS telecom_data_table (
+    IMSI INT AUTO_INCREMENT PRIMARY KEY,
+    engagement_score INT NOT NULL,
+    experience_score INT NOT NULL,
+    satisfaction_score INT NOT NULL
+);
+"""
+cursor.execute(create_table_query)
+
+# Commit changes to the database
+connection.commit()
+
+# Fetch and display the data
+cursor.execute("SELECT * FROM telecom_table")
+rows = cursor.fetchall()
+for row in rows:
+    print(row)
+
+# Close the cursor and connection
+cursor.close()
+connection.close()
+
+# File path and database connection details
+file_path = "C:\\Users\\Hasan\\Desktop\\data science folder\\Copy of Week2_challenge_data_source(CSV).csv"
+db_host = 'localhost'
+db_user = 'root'
+db_password = 'hasan'
+db_name = 'telecom_data_analysis'
+table_name = 'telecom_data_table'
+
+# Load the CSV file into a DataFrame
+data = pd.read_csv(file_path)
+
+# Select only relevant columns
+data = data[['IMSI', 'Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 'Activity Duration UL (ms)', 
+             'Avg RTT DL (ms)', 'Avg RTT UL (ms)', 'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)']]
+
+# Data cleaning
+columns_to_convert = ['Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 'Activity Duration UL (ms)', 
+                      'Avg RTT DL (ms)', 'Avg RTT UL (ms)', 'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)']
+
+for col in columns_to_convert:
+    data[col] = pd.to_numeric(data[col], errors='coerce')
+
+# Fill missing values with column means
+data[columns_to_convert] = data[columns_to_convert].fillna(data[columns_to_convert].mean())
+
+# Compute scores
+data['Engagement_Score'] = data[['Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 'Activity Duration UL (ms)']].mean(axis=1)
+data['Experience_Score'] = data[['Avg RTT DL (ms)', 'Avg RTT UL (ms)', 'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)']].mean(axis=1)
+data['Satisfaction_Score'] = (data['Engagement_Score'] + data['Experience_Score']) / 2
+
+# Drop duplicates in IMSI
+data = data.drop_duplicates(subset='IMSI', keep='first')
+
+# Keep only necessary columns
+data_to_insert = data[['IMSI', 'Engagement_Score', 'Experience_Score', 'Satisfaction_Score']]
+
+# Replace NaN values with None (which will be inserted as NULL in MySQL)
+data_to_insert = data_to_insert.applymap(lambda x: None if pd.isna(x) else x)
+
+# Ensure correct data types for insertion
+data_to_insert['IMSI'] = data_to_insert['IMSI'].astype('Int64')  # Ensure IMSI is integer type (nullable)
+data_to_insert['Engagement_Score'] = data_to_insert['Engagement_Score'].astype('float64')  # Ensure scores are float
+data_to_insert['Experience_Score'] = data_to_insert['Experience_Score'].astype('float64')
+data_to_insert['Satisfaction_Score'] = data_to_insert['Satisfaction_Score'].astype('float64')
+
+# Establish database connection
+def get_db_connection():
+    return connect(
+        host=db_host,
+        user=db_user,
+        password=db_password,
+        database=db_name
+    )
+
+# Insert data in chunks with retry mechanism
+chunk_size = 100  # Number of rows per chunk
+max_retries = 3  # Max retry attempts for each chunk
+retry_delay = 5  # Delay between retries in seconds
+
+try:
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        query = f"""
+        INSERT INTO {table_name} (IMSI, engagement_Score, experience_Score, satisfaction_Score)
+        VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE 
+        engagement_Score = VALUES(engagement_Score),
+        experience_Score = VALUES(experience_Score),
+        satisfaction_Score = VALUES(satisfaction_Score);
+        """
+        
+        # Insert in chunks with retries
+        for start in range(0, len(data_to_insert), chunk_size):
+            end = start + chunk_size
+            chunk = data_to_insert.iloc[start:end]
+            attempts = 0
+            
+            while attempts < max_retries:
+                try:
+                    cursor.executemany(query, chunk.values.tolist())
+                    conn.commit()
+                    print(f"Inserted rows {start} to {end}")
+                    break  # Successful insertion, break retry loop
+                except IntegrityError as e:
+                    print(f"IntegrityError occurred: {e}")
+                    break  # Skip problematic chunk
+                except Error as e:
+                    print(f"Database error occurred: {e}")
+                    attempts += 1
+                    if attempts < max_retries:
+                        print(f"Retrying ({attempts}/{max_retries}) after {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    else:
+                        print(f"Failed to insert rows {start} to {end} after {max_retries} attempts.")
+                        break
+                except Exception as e:
+                    print(f"Unexpected error: {e}")
+                    attempts += 1
+                    if attempts < max_retries:
+                        print(f"Retrying ({attempts}/{max_retries}) after {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    else:
+                        print(f"Failed to insert rows {start} to {end} after {max_retries} attempts.")
+                        break
+finally:
+    conn.close()
+#MLflow Setup and Model Tracking
+# Define engagement and experience metrics
+engagement_metrics = ['Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 'Activity Duration UL (ms)']
+experience_metrics = ['Avg RTT DL (ms)', 'Avg RTT UL (ms)', 'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)']
+
+# Convert metrics to numeric and handle non-numeric values
+for col in engagement_metrics + experience_metrics:
+    data[col] = pd.to_numeric(data[col], errors='coerce')
+
+# Fill missing values with column means
+data[engagement_metrics + experience_metrics] = data[engagement_metrics + experience_metrics].fillna(
+    data[engagement_metrics + experience_metrics].mean()
+)
+
+# Calculate Engagement Score and Experience Score
+data['Engagement_Score'] = data[engagement_metrics].mean(axis=1)
+data['Experience_Score'] = data[experience_metrics].mean(axis=1)
+
+# Calculate Satisfaction Score
+data['Satisfaction_Score'] = (data['Engagement_Score'] + data['Experience_Score']) / 2
+
+# Define features and target
+features = ['Engagement_Score', 'Experience_Score']
+target = 'Satisfaction_Score'
+X = data[features]
+y = data[target]
+
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# MLflow Tracking
+mlflow.set_tracking_uri("http://127.0.0.1:5000")  # Replace with your MLflow tracking server URI
+mlflow.set_experiment("Customer Satisfaction Prediction")
+
+with mlflow.start_run() as run:
+    # Record start time
+    start_time = datetime.now()
+    
+    # Initialize model
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    
+    # Log model parameters
+    mlflow.log_param("n_estimators", 100)
+    mlflow.log_param("random_state", 42)
+    
+    # Train the model
+    model.fit(X_train, y_train)
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    
+    # Calculate metrics
+    mae = mean_absolute_error(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
+    # Log metrics
+    mlflow.log_metric("Mean Absolute Error", mae)
+    mlflow.log_metric("Mean Squared Error", mse)
+    mlflow.log_metric("R2 Score", r2)
+    
+    # Save and log the model
+    model_path = "random_forest_model"
+    mlflow.sklearn.log_model(model, model_path)
+    
+    # Record end time
+    end_time = datetime.now()
+    
+    # Log additional information
+    mlflow.set_tag("Code Version", os.getenv("GIT_COMMIT", "v1.0"))
+    mlflow.set_tag("Source", "Customer Engagement Analysis")
+    mlflow.log_param("Start Time", str(start_time))
+    mlflow.log_param("End Time", str(end_time))
+    
+    # Save metrics and parameters to CSV for reporting
+    results = pd.DataFrame({
+        "Metric": ["Mean Absolute Error", "Mean Squared Error", "R2 Score"],
+        "Value": [mae, mse, r2]
+    })
+    results.to_csv("tracking_results.csv", index=False)
+    mlflow.log_artifact("tracking_results.csv")
+
+print("Model tracking and logging completed.")
+#Model Deployment Tracking Using Docker
+# Initialize Flask app
+app = Flask(__name__)
+
+# Function to train the model
+def train_model():
+    
+    # Define features and target
+    engagement_metrics = ['Total UL (Bytes)', 'Total DL (Bytes)', 'Activity Duration DL (ms)', 'Activity Duration UL (ms)']
+    experience_metrics = ['Avg RTT DL (ms)', 'Avg RTT UL (ms)', 'Avg Bearer TP DL (kbps)', 'Avg Bearer TP UL (kbps)']
+
+    for col in engagement_metrics + experience_metrics:
+        data[col] = pd.to_numeric(data[col], errors='coerce')
+    data[engagement_metrics + experience_metrics] = data[engagement_metrics + experience_metrics].fillna(
+        data[engagement_metrics + experience_metrics].mean()
+    )
+
+    data['Engagement_Score'] = data[engagement_metrics].mean(axis=1)
+    data['Experience_Score'] = data[experience_metrics].mean(axis=1)
+    data['Satisfaction_Score'] = (data['Engagement_Score'] + data['Experience_Score']) / 2
+
+    X = data[['Engagement_Score', 'Experience_Score']]
+    y = data['Satisfaction_Score']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Train Random Forest model
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    start_time = time.time()
+    model.fit(X_train, y_train)
+    end_time = time.time()
+
+    # Save model
+    joblib.dump(model, "model.joblib")
+
+    # Log metrics
+    y_pred = model.predict(X_test)
+    metrics = {
+        "MAE": mean_absolute_error(y_test, y_pred),
+        "MSE": mean_squared_error(y_test, y_pred),
+        "R2_Score": r2_score(y_test, y_pred),
+        "Training_Time": end_time - start_time
+    }
+
+    # Save metrics to file
+    with open("metrics.json", "w") as f:
+        json.dump(metrics, f)
+
+    return metrics
+
+# API endpoint for model training
+@app.route('/train', methods=['POST'])
+def train_endpoint():
+    metrics = train_model()
+    return jsonify({"status": "success", "metrics": metrics})
+
+# API endpoint to make predictions
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.get_json()
+    model = joblib.load("model.joblib")
+    X = np.array(data["features"]).reshape(1, -1)
+    prediction = model.predict(X)[0]
+    return jsonify({"prediction": prediction})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
